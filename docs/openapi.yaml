@@ -1,0 +1,91 @@
+openapi: 3.1.0
+info:
+  title: 声音时间机器 MVP API
+  version: 0.1.0
+  description: 本地 P0 实现。身份从 HttpOnly cookie 解析；除 guest-session 外，禁止用请求中的 user_id 决定权限。微信 P1 在 feature flag 关闭时不暴露。
+servers:
+  - url: http://localhost:3001/api/v1
+paths:
+  /guest-session:
+    post: { summary: 建立或复用游客会话, responses: { '200': { $ref: '#/components/responses/Success' } } }
+  /listening-sessions:
+    post: { summary: 创建收听会话, requestBody: { $ref: '#/components/requestBodies/ListeningSession' }, responses: { '200': { $ref: '#/components/responses/Success' }, '401': { $ref: '#/components/responses/Error' } } }
+  /me:
+    get: { summary: 当前游客或账号及偏好, responses: { '200': { $ref: '#/components/responses/Success' } } }
+  /catalog:
+    get: { summary: 仅返回有已发布媒体的年代、类型与组合, parameters: [{ name: era, in: query, schema: { $ref: '#/components/schemas/FilterEra' } }], responses: { '200': { $ref: '#/components/responses/Success' } } }
+  /programs/{id}:
+    get: { summary: 公开节目详情；下架返回 CONTENT_UNAVAILABLE, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { $ref: '#/components/responses/Success' }, '404': { $ref: '#/components/responses/Error' } } }
+  /queues:
+    post: { summary: 创建范围内去重随机队列并返回第一条，空库为 NO_CONTENT, requestBody: { $ref: '#/components/requestBodies/Queue' }, responses: { '200': { $ref: '#/components/responses/Success' }, '409': { $ref: '#/components/responses/Error' } } }
+  /queues/{id}/next:
+    post: { summary: 消费下一条；单条候选为 NO_ALTERNATIVE, parameters: [{ $ref: '#/components/parameters/Id' }], requestBody: { $ref: '#/components/requestBodies/Next' }, responses: { '200': { $ref: '#/components/responses/Success' }, '403': { $ref: '#/components/responses/Error' }, '410': { $ref: '#/components/responses/Error' } } }
+  /playbacks:
+    post: { summary: 创建一次节目收听生命周期并发放开发媒体地址, requestBody: { $ref: '#/components/requestBodies/Playback' }, responses: { '201': { $ref: '#/components/responses/Success' } } }
+  /playbacks/{id}/attempts:
+    post: { summary: 创建幂等播放尝试, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '201': { $ref: '#/components/responses/Success' } } }
+  /playbacks/{id}/progress:
+    post: { summary: 接受单调累积进度；重复和乱序不重复计时, parameters: [{ $ref: '#/components/parameters/Id' }], requestBody: { $ref: '#/components/requestBodies/Progress' }, responses: { '200': { $ref: '#/components/responses/Success' }, '400': { $ref: '#/components/responses/Error' } } }
+  /playbacks/{id}/end:
+    post: { summary: 幂等结束播放, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { $ref: '#/components/responses/Success' } } }
+  /playbacks/{id}/media-refresh:
+    post: { summary: 上架检查后刷新媒体地址，不新建 playback, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { $ref: '#/components/responses/Success' } } }
+  /me/preferences:
+    put: { summary: 保存 all 或已定义年代／类型偏好, requestBody: { $ref: '#/components/requestBodies/Preferences' }, responses: { '200': { $ref: '#/components/responses/Success' } } }
+  /me/likes:
+    get: { summary: 当前主体喜欢列表，已下架项目仅返回占位信息, responses: { '200': { $ref: '#/components/responses/Success' } } }
+  /me/likes/{programId}:
+    put: { summary: 幂等喜欢, parameters: [{ name: programId, in: path, required: true, schema: { type: string, format: uuid } }], responses: { '200': { $ref: '#/components/responses/Success' } } }
+    delete: { summary: 幂等取消喜欢, parameters: [{ name: programId, in: path, required: true, schema: { type: string, format: uuid } }], responses: { '200': { $ref: '#/components/responses/Success' } } }
+  /feedback-prompts: { post: { summary: 按时长与频控创建可忽略反馈提示, responses: { '200': { $ref: '#/components/responses/Success' } } } }
+  /feedback-prompts/{id}/shown: { post: { summary: 确认实际曝光, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { $ref: '#/components/responses/Success' } } } }
+  /feedback-prompts/{id}/dismiss: { post: { summary: 幂等忽略, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { $ref: '#/components/responses/Success' } } } }
+  /feedback-prompts/{id}/answer: { put: { summary: 提交 like 或 neutral, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { $ref: '#/components/responses/Success' } } } }
+  /events/batch:
+    post: { summary: 最多 50 条、64KB 的白名单事件；event_id 去重, requestBody: { $ref: '#/components/requestBodies/Events' }, responses: { '200': { $ref: '#/components/responses/Success' } } }
+  /me/deletion-requests: { post: { summary: 确认后清除当前主体数据并撤销 cookie, responses: { '202': { $ref: '#/components/responses/Success' } } } }
+  /auth/logout: { post: { summary: 撤销当前会话, responses: { '200': { $ref: '#/components/responses/Success' } } } }
+  /admin/uploads: { post: { summary: 运营上传受控 WAV，需 x-admin-token, responses: { '201': { $ref: '#/components/responses/Success' }, '403': { $ref: '#/components/responses/Error' } } } }
+  /admin/uploads/{assetId}/complete: { post: { summary: 校验真实 WAV 时长／校验和, parameters: [{ name: assetId, in: path, required: true, schema: { type: string, format: uuid } }], responses: { '200': { $ref: '#/components/responses/Success' } } } }
+  /admin/programs:
+    get: { summary: 运营节目列表, responses: { '200': { $ref: '#/components/responses/Success' } } }
+    post: { summary: 新建节目草稿及来源／使用依据, responses: { '201': { $ref: '#/components/responses/Success' } } }
+  /admin/programs/{id}:
+    patch: { summary: 带 version 编辑；音频变化回到 draft, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { $ref: '#/components/responses/Success' }, '409': { $ref: '#/components/responses/Error' } } }
+  /admin/programs/{id}/submit: { post: { summary: 资料完整后送审, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { $ref: '#/components/responses/Success' } } } }
+  /admin/programs/{id}/review: { post: { summary: reviewer/admin 审核, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { $ref: '#/components/responses/Success' } } } }
+  /admin/programs/{id}/publish: { post: { summary: 仅最新审核通过、媒体 ready、资料齐全的节目可发布, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { $ref: '#/components/responses/Success' } } } }
+  /admin/programs/{id}/offline: { post: { summary: 下架，立即从新队列和新媒体请求移除, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { $ref: '#/components/responses/Success' } } } }
+  /admin/reports/daily: { get: { summary: P0 数据库日报，排除分析关闭会话, responses: { '200': { $ref: '#/components/responses/Success' } } } }
+  /admin/reports/export: { get: { summary: CSV 导出，防公式注入且不含身份凭证, responses: { '200': { description: CSV } } } }
+components:
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+  schemas:
+    Era: { type: string, enum: [1970s, 1980s, 1990s, 2000s] }
+    Category: { type: string, enum: [news, storytelling, novel, opera] }
+    FilterEra: { oneOf: [{ $ref: '#/components/schemas/Era' }, { const: all }] }
+    FilterCategory: { oneOf: [{ $ref: '#/components/schemas/Category' }, { const: all }] }
+    Preferences:
+      type: object
+      required: [era, category, tuning_sound_enabled, analytics_enabled]
+      properties:
+        era: { $ref: '#/components/schemas/FilterEra' }
+        category: { $ref: '#/components/schemas/FilterCategory' }
+        tuning_sound_enabled: { type: boolean }
+        analytics_enabled: { type: boolean }
+    Error:
+      type: object
+      required: [error, request_id]
+      properties: { error: { type: object, properties: { code: { type: string }, message: { type: string }, retryable: { type: boolean } } }, request_id: { type: string } }
+  requestBodies:
+    ListeningSession: { required: true, content: { application/json: { schema: { type: object, required: [entry_source], properties: { entry_source: { type: string } } } } } }
+    Queue: { required: true, content: { application/json: { schema: { type: object, required: [session_id, request_id, mode, era, category], properties: { session_id: { type: string, format: uuid }, request_id: { type: string }, mode: { enum: [today, era] }, era: { $ref: '#/components/schemas/FilterEra' }, category: { $ref: '#/components/schemas/FilterCategory' } } } } } }
+    Next: { required: true, content: { application/json: { schema: { type: object, required: [request_id, reason], properties: { request_id: { type: string }, reason: { enum: [manual, ended] } } } } } }
+    Playback: { required: true, content: { application/json: { schema: { type: object, required: [program_id, session_id, request_id], properties: { program_id: { type: string, format: uuid }, session_id: { type: string, format: uuid }, queue_id: { type: string, format: uuid }, request_id: { type: string } } } } } }
+    Progress: { required: true, content: { application/json: { schema: { type: object, required: [seq, cumulative_listen_ms, observed_wall_ms, position_ms, state, sampled_at], properties: { seq: { type: integer }, cumulative_listen_ms: { type: integer }, observed_wall_ms: { type: integer }, position_ms: { type: integer }, state: { enum: [playing, paused, buffering, ended] }, sampled_at: { type: string, format: date-time } } } } } }
+    Preferences: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Preferences' } } } }
+    Events: { required: true, content: { application/json: { schema: { type: object, required: [events], properties: { events: { type: array, maxItems: 50 } } } } } }
+  responses:
+    Success: { description: 成功包，格式为 '{data, request_id}' }
+    Error: { description: 错误包，格式为 '{error:{code,message,retryable}, request_id}', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }

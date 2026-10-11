@@ -1,0 +1,21 @@
+{
+  "name": "sound-time-machine-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "声音时间机器本地可运行 P0 MVP",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,magenta \"npm run dev --workspace @sound-time-machine/api\" \"npm run dev --workspace @sound-time-machine/web\"",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:migrate": "npm run db:migrate --workspace @sound-time-machine/api",
+    "db:seed": "npm run db:seed --workspace @sound-time-machine/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
